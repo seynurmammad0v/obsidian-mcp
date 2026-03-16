@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { resolve } from 'node:path';
-import { readFile, stat } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
+import { readFile, stat, mkdir, writeFile } from 'node:fs/promises';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { scanVault } from './vault/scanner.js';
 import { VaultWatcher } from './vault/watcher.js';
@@ -47,13 +47,115 @@ async function loadConfig(vaultRoot: string): Promise<VaultConfig> {
   }
 }
 
+async function scaffoldVault(vaultPath: string, logLevel: string): Promise<void> {
+  log('info', `Scaffolding knowledge base at: ${vaultPath}`, logLevel);
+
+  const dirs = ['practices', 'patterns', 'decisions', 'templates'];
+  for (const dir of dirs) {
+    await mkdir(join(vaultPath, dir), { recursive: true });
+  }
+
+  await writeFile(join(vaultPath, '.obsidian-mcp.json'), JSON.stringify({
+    ignore: ['templates/', '.trash/'],
+    watchDebounce: 100,
+    maxTraversalDepth: 10,
+    maxSearchResults: 500,
+  }, null, 2) + '\n');
+
+  await writeFile(join(vaultPath, 'templates', 'practice.md'), `---
+tags: []
+severity: low  # low | medium | high | critical
+applies_to: []
+---
+
+# Practice Name
+
+Brief description of the practice.
+
+## Why
+
+Why this practice matters.
+
+## Examples
+
+\`\`\`
+Code example here
+\`\`\`
+
+## Exceptions
+
+When it's OK to skip this practice.
+
+## Related
+
+- [[related-practice]]
+`);
+
+  await writeFile(join(vaultPath, 'templates', 'pattern.md'), `---
+tags: []
+use_when: ""
+trade_offs: ""
+---
+
+# Pattern Name
+
+Brief description of the pattern.
+
+## Problem
+
+What problem does this solve?
+
+## Solution
+
+How to implement it.
+
+## Trade-offs
+
+Pros and cons of using this pattern.
+
+## Related
+
+- [[related-pattern]]
+`);
+
+  await writeFile(join(vaultPath, 'templates', 'decision.md'), `---
+tags: []
+status: proposed  # proposed | accepted | deprecated | superseded
+date: ${new Date().toISOString().split('T')[0]}
+---
+
+# Decision: Title
+
+## Context
+
+What is the issue that we're seeing that is motivating this decision?
+
+## Decision
+
+What is the change that we're proposing and/or doing?
+
+## Consequences
+
+What becomes easier or more difficult to do because of this change?
+
+## Related
+
+- [[related-decision]]
+`);
+
+  log('info', 'Created directories: practices/, patterns/, decisions/, templates/', logLevel);
+  log('info', 'Created templates: practice.md, pattern.md, decision.md', logLevel);
+  log('info', 'Created .obsidian-mcp.json', logLevel);
+  log('info', `\nOpen ${vaultPath} in Obsidian to start building your knowledge base.`, logLevel);
+}
+
 async function main(): Promise<void> {
   const { vault, init, verbose, logLevel } = parseArgs(process.argv.slice(2));
   const effectiveLogLevel = verbose ? 'debug' : logLevel;
 
   if (init) {
-    log('error', '--init is not yet implemented', effectiveLogLevel);
-    process.exit(1);
+    await scaffoldVault(resolve(init), effectiveLogLevel);
+    process.exit(0);
   }
 
   if (!vault) {
