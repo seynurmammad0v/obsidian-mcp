@@ -43,6 +43,6 @@ export function parseMarkdownFile(path: string, raw: string): VaultNode {
     tags: allTags,
     outLinks: extractWikilinks(content),
     inLinks: [],
-    sections: extractSections(raw),
+    sections: extractSections(content),
   };
 }
