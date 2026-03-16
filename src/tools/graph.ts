@@ -8,38 +8,38 @@ export function graphToolDefs() {
     graph_neighbors: {
       name: 'graph_neighbors',
       description: 'Get direct [[links]] and backlinks for a note.',
-      inputSchema: z.object({
+      inputSchema: {
         path: z.string().describe('Relative path to the note'),
         direction: z.enum(['in', 'out', 'both']).optional().default('both'),
-      }),
+      },
     },
     graph_traverse: {
       name: 'graph_traverse',
       description: 'BFS or DFS traversal from a starting note, up to N hops deep. Returns flat node list with depth and edge list.',
-      inputSchema: z.object({
+      inputSchema: {
         path: z.string().describe('Starting note path'),
         depth: z.number().min(1).max(10).optional().default(3),
         algorithm: z.enum(['bfs', 'dfs']).optional().default('bfs'),
         direction: z.enum(['in', 'out', 'both']).optional().default('out'),
         filter_tags: z.array(z.string()).optional(),
-      }),
+      },
     },
     graph_shortest_path: {
       name: 'graph_shortest_path',
       description: 'Find the shortest link chain between two notes.',
-      inputSchema: z.object({
+      inputSchema: {
         from: z.string().describe('Starting note path'),
         to: z.string().describe('Target note path'),
         direction: z.enum(['out', 'both']).optional().default('both'),
-      }),
+      },
     },
     graph_analyze: {
       name: 'graph_analyze',
       description: 'Structural analysis: connected components, orphan notes, bridge notes, hub notes, or dead links.',
-      inputSchema: z.object({
+      inputSchema: {
         analysis: z.enum(['components', 'orphans', 'bridges', 'hubs', 'dead_links']),
         limit: z.number().optional().default(20),
-      }),
+      },
     },
   };
 }

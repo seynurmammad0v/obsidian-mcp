@@ -10,25 +10,25 @@ export function readingToolDefs() {
     vault_stats: {
       name: 'vault_stats',
       description: 'Get an overview of the vault: total notes, tags, links, orphans, components, top tags, and top hubs.',
-      inputSchema: z.object({}),
+      inputSchema: {},
     },
     read_note: {
       name: 'read_note',
       description: 'Read a note\'s full content with parsed frontmatter, links, backlinks, and section headings.',
-      inputSchema: z.object({
+      inputSchema: {
         path: z.string().describe('Relative path to the note (e.g. "practices/go-errors.md")'),
-      }),
+      },
     },
     search_notes: {
       name: 'search_notes',
       description: 'Search notes by tags, folder, frontmatter fields, and/or keyword in content. All filters are optional and combinable.',
-      inputSchema: z.object({
+      inputSchema: {
         tags: z.array(z.string()).optional().describe('Notes must have ALL these tags'),
         folder: z.string().optional().describe('Restrict to notes in this folder prefix'),
         frontmatter: z.record(z.unknown()).optional().describe('Match frontmatter field values (shallow equality, array subset match)'),
         query: z.string().optional().describe('Keyword to search in note content'),
         limit: z.number().optional().default(20).describe('Max results (default 20)'),
-      }),
+      },
     },
   };
 }

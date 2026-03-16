@@ -12,47 +12,47 @@ export function writingToolDefs() {
     create_note: {
       name: 'create_note',
       description: 'Create a new note with content and optional frontmatter. Path must end in .md (appended if missing).',
-      inputSchema: z.object({
+      inputSchema: {
         path: z.string(),
         content: z.string(),
         frontmatter: z.record(z.unknown()).optional(),
-      }),
+      },
     },
     patch_note: {
       name: 'patch_note',
       description: 'Surgical edits: append, prepend, or replace a specific section. Can also update frontmatter independently.',
-      inputSchema: z.object({
+      inputSchema: {
         path: z.string(),
         mode: z.enum(['append', 'prepend', 'replace_section']),
         content: z.string().optional(),
         section: z.string().optional(),
         frontmatter: z.record(z.unknown()).optional(),
-      }),
+      },
     },
     move_note: {
       name: 'move_note',
       description: 'Move/rename a note and auto-update all [[wikilinks]] referencing it across the vault.',
-      inputSchema: z.object({
+      inputSchema: {
         oldPath: z.string(),
         newPath: z.string(),
-      }),
+      },
     },
     delete_note: {
       name: 'delete_note',
       description: 'Delete a note and report which links will break.',
-      inputSchema: z.object({
+      inputSchema: {
         path: z.string(),
-      }),
+      },
     },
     manage_tags: {
       name: 'manage_tags',
       description: 'Add, remove, or rename tags across notes. For add/remove, paths is required. For rename, omit paths for vault-wide.',
-      inputSchema: z.object({
+      inputSchema: {
         action: z.enum(['add', 'remove', 'rename']),
         tag: z.string(),
         newTag: z.string().optional(),
         paths: z.array(z.string()).optional(),
-      }),
+      },
     },
   };
 }

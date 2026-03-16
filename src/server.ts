@@ -19,7 +19,7 @@ export function createServer(
 
   const readDefs = readingToolDefs();
   const readHandlers = createReadingHandlers(graph, vaultRoot, config);
-  server.tool(readDefs.vault_stats.name, readDefs.vault_stats.description, readDefs.vault_stats.inputSchema, readHandlers.vault_stats);
+  server.tool(readDefs.vault_stats.name, readDefs.vault_stats.description, readHandlers.vault_stats);
   server.tool(readDefs.read_note.name, readDefs.read_note.description, readDefs.read_note.inputSchema, readHandlers.read_note);
   server.tool(readDefs.search_notes.name, readDefs.search_notes.description, readDefs.search_notes.inputSchema, readHandlers.search_notes);
 
