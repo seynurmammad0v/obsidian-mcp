@@ -25,7 +25,7 @@ export function readingToolDefs() {
       inputSchema: {
         tags: z.array(z.string()).optional().describe('Notes must have ALL these tags'),
         folder: z.string().optional().describe('Restrict to notes in this folder prefix'),
-        frontmatter: z.record(z.unknown()).optional().describe('Match frontmatter field values (shallow equality, array subset match)'),
+        frontmatter: z.string().optional().describe('JSON object to match frontmatter fields, e.g. {"severity":"critical","tags":["go"]}'),
         query: z.string().optional().describe('Keyword to search in note content'),
         limit: z.number().optional().default(20).describe('Max results (default 20)'),
       },
@@ -114,7 +114,7 @@ export function createReadingHandlers(
     }: {
       tags?: string[];
       folder?: string;
-      frontmatter?: Record<string, unknown>;
+      frontmatter?: string;
       query?: string;
       limit?: number;
     }) {
@@ -131,9 +131,10 @@ export function createReadingHandlers(
         );
       }
 
-      if (frontmatter) {
+      const fmFilter = frontmatter ? JSON.parse(frontmatter) as Record<string, unknown> : null;
+      if (fmFilter) {
         candidates = candidates.filter(n => {
-          for (const [key, value] of Object.entries(frontmatter)) {
+          for (const [key, value] of Object.entries(fmFilter)) {
             const nodeVal = n.frontmatter[key];
             if (Array.isArray(value)) {
               if (!Array.isArray(nodeVal)) return false;

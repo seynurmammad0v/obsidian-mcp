@@ -15,7 +15,7 @@ export function writingToolDefs() {
       inputSchema: {
         path: z.string(),
         content: z.string(),
-        frontmatter: z.record(z.unknown()).optional(),
+        frontmatter: z.string().optional().describe('JSON object for frontmatter fields'),
       },
     },
     patch_note: {
@@ -26,7 +26,7 @@ export function writingToolDefs() {
         mode: z.enum(['append', 'prepend', 'replace_section']),
         content: z.string().optional(),
         section: z.string().optional(),
-        frontmatter: z.record(z.unknown()).optional(),
+        frontmatter: z.string().optional().describe('JSON object for frontmatter fields'),
       },
     },
     move_note: {
@@ -74,14 +74,15 @@ export function createWritingHandlers(
   }
 
   return {
-    async create_note({ path, content, frontmatter }: { path: string; content: string; frontmatter?: Record<string, unknown> }) {
+    async create_note({ path, content, frontmatter }: { path: string; content: string; frontmatter?: string }) {
       const notePath = ensureMd(path);
+      const fm = frontmatter ? JSON.parse(frontmatter) as Record<string, unknown> : undefined;
 
       if (graph.getNode(notePath)) {
         return { content: [{ type: 'text' as const, text: `Error: Note already exists: ${notePath}. Use patch_note to modify it.` }], isError: true };
       }
 
-      const fileContent = frontmatter ? serializeFrontmatter(frontmatter, content) : content;
+      const fileContent = fm ? serializeFrontmatter(fm, content) : content;
       await writeAndSuppress(notePath, fileContent);
 
       const node = parseMarkdownFile(notePath, fileContent);
@@ -93,9 +94,10 @@ export function createWritingHandlers(
 
     async patch_note({ path, mode, content, section, frontmatter }: {
       path: string; mode: 'append' | 'prepend' | 'replace_section';
-      content?: string; section?: string; frontmatter?: Record<string, unknown>;
+      content?: string; section?: string; frontmatter?: string;
     }) {
-      if (!content && !frontmatter) {
+      const fm = frontmatter ? JSON.parse(frontmatter) as Record<string, unknown> : undefined;
+      if (!content && !fm) {
         return { content: [{ type: 'text' as const, text: 'Error: At least one of content or frontmatter must be provided.' }], isError: true };
       }
 
@@ -156,7 +158,7 @@ export function createWritingHandlers(
         }
       }
 
-      const finalFrontmatter = frontmatter ? mergeFrontmatter(parsed.data, frontmatter) : parsed.data;
+      const finalFrontmatter = fm ? mergeFrontmatter(parsed.data, fm) : parsed.data;
       const finalContent = serializeFrontmatter(finalFrontmatter, bodyContent);
       await writeAndSuppress(path, finalContent);
 
