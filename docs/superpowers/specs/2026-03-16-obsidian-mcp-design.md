@@ -29,6 +29,7 @@ An MCP server that turns any Obsidian vault into an AI-queryable knowledge graph
 | Search | Tag/frontmatter filtering + keyword grep | Claude formulates queries intelligently; embeddings are unnecessary overhead |
 | Vault structure | Agnostic | Works with any vault; optional `--init` for best-practices scaffold |
 | Distribution | npx only | Covers 95% of users. Docker/plugin can come later |
+| Transport | stdio | Required for npx/Claude Desktop integration. HTTP/SSE deferred to future |
 | Tool count | 12 | Within 5-15 sweet spot. Read-heavy (3), graph (4), write (5) |
 
 ## Tool Design
@@ -46,11 +47,14 @@ Overview of the vault. No parameters.
   "totalTags": 124,
   "totalLinks": 2341,
   "orphanNotes": 23,
+  "deadLinks": 7,
   "connectedComponents": 3,
   "topTags": [{"tag": "go", "count": 45}],
   "topHubs": [{"path": "patterns/retry.md", "linkCount": 18}]
 }
 ```
+
+`topTags` and `topHubs` return top 10 by default.
 
 #### `read_note`
 
@@ -67,7 +71,7 @@ Read a note's full content with parsed metadata and link context.
   "content": "# Go Error Handling\n...",
   "outLinks": ["patterns/retry.md", "patterns/circuit-breaker.md"],
   "inLinks": ["decisions/why-fiber.md"],
-  "sections": ["Why", "Examples", "Related"]
+  "sections": [{"heading": "Why", "level": 2, "line": 5}, {"heading": "Examples", "level": 2, "line": 12}, {"heading": "Related", "level": 2, "line": 20}]
 }
 ```
 
@@ -81,8 +85,12 @@ Combinable filters, all optional. Returns snippets, not full content.
 - `tags` (string[], optional) — notes with ALL these tags
 - `folder` (string, optional) — restrict to folder prefix
 - `frontmatter` (Record<string, any>, optional) — match frontmatter field values
-- `query` (string, optional) — keyword in content (only reads file content when used)
+- `query` (string, optional) — keyword in content
 - `limit` (number, optional, default 20) — max results
+
+**Filter application order:** When `query` is provided, tag/folder/frontmatter filters are applied first against the in-memory index to produce a candidate set. Only candidate files are read from disk for keyword matching. If no other filters are provided with `query`, all notes are scanned (capped at `maxSearchResults` total file reads, default 500).
+
+**Frontmatter matching semantics:** Shallow equality for scalar values. For array-valued fields (e.g., `tags`), matches if the note's array contains all specified values (subset match). Nested objects are not supported in v1.
 
 **Returns:** Array of `{path, title, frontmatter, tags, snippet}`. Snippet is the matching line + surrounding context.
 
@@ -109,7 +117,18 @@ BFS or DFS from a starting note, N hops deep.
 - `direction` (`"out" | "in" | "both"`, default `"out"`)
 - `filter_tags` (string[], optional) — only traverse through notes with these tags
 
-**Returns:** Tree of nodes with depth level.
+**Returns:**
+```json
+{
+  "root": "path/to/start.md",
+  "nodes": [
+    {"path": "start.md", "title": "Start", "depth": 0, "tags": ["go"]},
+    {"path": "linked.md", "title": "Linked", "depth": 1, "tags": []}
+  ],
+  "edges": [{"from": "start.md", "to": "linked.md"}]
+}
+```
+Flat node list with depth + edge list (more useful to LLMs than a nested tree).
 
 #### `graph_shortest_path`
 
@@ -118,6 +137,7 @@ Shortest link chain between two notes.
 **Params:**
 - `from` (string, required)
 - `to` (string, required)
+- `direction` (`"out" | "both"`, default `"both"`) — `"both"` treats links as bidirectional; `"out"` follows only forward links
 
 **Returns:** Ordered array of `{path, title}` forming the shortest chain, or `null` if no path exists.
 
@@ -126,7 +146,7 @@ Shortest link chain between two notes.
 Structural analysis of the vault graph.
 
 **Params:**
-- `analysis` (`"components" | "orphans" | "bridges" | "hubs"`, required)
+- `analysis` (`"components" | "orphans" | "bridges" | "hubs" | "dead_links"`, required)
 - `limit` (number, optional, default 20) — for hubs, top N by connection count
 
 **Returns:** Varies by analysis type:
@@ -134,6 +154,9 @@ Structural analysis of the vault graph.
 - `orphans` — array of `{path, title}`
 - `bridges` — array of `{path, title, componentsSplit: number}`
 - `hubs` — array of `{path, title, inLinks: number, outLinks: number, total: number}`
+- `dead_links` — array of `{target: string, referencedBy: [{path, linkText}]}` (links to non-existent notes)
+
+**Note:** `orphans` reports existing notes with zero links. `dead_links` reports phantom targets (linked but no file exists). These are distinct concepts.
 
 ### Writing & Manipulation (5 tools)
 
@@ -142,7 +165,7 @@ Structural analysis of the vault graph.
 Create a new note with content and optional frontmatter.
 
 **Params:**
-- `path` (string, required) — relative to vault root, creates parent dirs if needed
+- `path` (string, required) — relative to vault root, must end in `.md` (appended if missing), creates parent dirs if needed
 - `content` (string, required) — markdown content
 - `frontmatter` (Record<string, any>, optional) — YAML frontmatter to prepend
 
@@ -157,9 +180,17 @@ Surgical edits to existing notes.
 **Params:**
 - `path` (string, required)
 - `mode` (`"append" | "prepend" | "replace_section"`, required)
-- `content` (string, optional) — new markdown content
-- `section` (string, optional) — target heading for `replace_section` mode
-- `frontmatter` (Record<string, any>, optional) — merge into existing frontmatter (does not overwrite unmentioned fields)
+- `content` (string, required for append/prepend/replace_section) — new markdown content
+- `section` (string, required for replace_section) — target heading text
+- `frontmatter` (Record<string, any>, optional) — merge into existing frontmatter (does not overwrite unmentioned fields). Applied independently of mode/content.
+
+**Validation:** At least one of `content` or `frontmatter` must be provided. `content` is required for all modes. `section` is required for `replace_section` and ignored for other modes.
+
+**Section matching rules:**
+- Matches the first heading whose text equals `section` (case-sensitive)
+- Section boundary: from the matched heading to the next heading of the same level or higher, or end of file
+- The heading line itself is preserved; only content beneath it is replaced
+- If target section is not found, returns error with list of available sections
 
 **Returns:** `{patched: true, path: string}`
 
@@ -171,10 +202,19 @@ Rename/move a note and auto-update all backlinks across the vault.
 - `oldPath` (string, required)
 - `newPath` (string, required)
 
+**Wikilink resolution:** All forms of wikilink referencing the old path are updated:
+- `[[old-name]]` → `[[new-name]]`
+- `[[old-name|display text]]` → `[[new-name|display text]]` (alias preserved)
+- `[[old-name#heading]]` → `[[new-name#heading]]` (anchor preserved)
+- `[[old-name#heading|display]]` → `[[new-name#heading|display]]` (both preserved)
+- `[[folder/old-name]]` → `[[folder/new-name]]` (path form)
+
+Matching uses Obsidian's shortest-unique-path convention: `[[old-name]]` matches a file named `old-name.md` regardless of folder depth.
+
 **Behavior:**
-1. Moves file to new path
-2. Scans ALL notes for `[[old-name]]` references (using in-memory graph, not filesystem)
-3. Updates each reference to `[[new-name]]`
+1. Moves file to new path (creates parent dirs if needed)
+2. Finds all referencing notes via in-memory `inLinks` (no filesystem scan)
+3. Updates each wikilink form as described above
 4. Updates graph node + edges
 
 **Returns:** `{moved: true, updatedLinks: 14, updatedFiles: ["path1.md", "path2.md"]}`
@@ -202,10 +242,11 @@ Bulk tag operations across one or multiple notes.
 - `action` (`"add" | "remove" | "rename"`, required)
 - `tag` (string, required) — the tag to operate on
 - `newTag` (string, optional) — for rename action
-- `paths` (string[], optional) — specific notes. If omitted, operates vault-wide (for rename)
+- `paths` (string[], required for add/remove, optional for rename) — specific notes to operate on. For `rename`, omitting `paths` operates vault-wide.
 
 **Behavior:**
 - Tags in frontmatter `tags:` array AND inline `#tag` in content are both handled
+- `add`/`remove` require explicit `paths` (adding a tag to every note in the vault is prevented)
 - `rename` without `paths` does vault-wide rename (useful for taxonomy changes)
 
 **Returns:** `{action: string, affectedNotes: number, files: string[]}`
@@ -257,7 +298,7 @@ interface VaultNode {
   tags: string[];                   // from frontmatter + inline #tags
   outLinks: string[];               // [[links]] this note contains
   inLinks: string[];                // notes that link TO this note (computed)
-  sections: string[];               // H1/H2/H3 headings for patch_note targeting
+  sections: {heading: string, level: number, line: number}[];  // headings for patch_note targeting
 }
 
 // The graph is a Map keyed by relative path
@@ -267,7 +308,7 @@ type VaultGraph = Map<string, VaultNode>;
 ### Data Flow
 
 **Startup:**
-1. `scanner.ts` reads all `.md` files in vault (async, 50 concurrent)
+1. `scanner.ts` reads all `.md` files in vault (async, 50 concurrent). Hardcoded exclusions: `.obsidian/`, `.trash/`, `node_modules/`
 2. `parser.ts` extracts frontmatter, `[[links]]`, `#tags`, heading sections per file
 3. `graph/index.ts` builds adjacency list from parsed nodes, computes `inLinks`
 4. `watcher.ts` starts monitoring for file changes
@@ -280,9 +321,10 @@ type VaultGraph = Map<string, VaultNode>;
 
 **File change detected:**
 1. `watcher.ts` fires event (debounced 100ms)
-2. `parser.ts` re-parses the changed file only
-3. `graph/index.ts` updates that node + recomputes affected edges incrementally
-4. ~2-5ms per file change
+2. Self-write suppression: write tools register their file paths; watcher ignores events for those paths within the debounce window (prevents double-update race condition)
+3. `parser.ts` re-parses the changed file only
+4. `graph/index.ts` updates that node + recomputes affected edges incrementally
+5. ~2-5ms per file change
 
 ### Dependencies (4 runtime)
 
@@ -308,6 +350,12 @@ type VaultGraph = Map<string, VaultNode>;
 ```bash
 npx obsidian-mcp --vault ~/my-obsidian-vault
 ```
+
+**Flags:**
+- `--vault <path>` (required) — path to Obsidian vault
+- `--init <path>` — scaffold a best-practices vault (see below)
+- `--verbose` — enable debug logging to stderr
+- `--log-level <level>` — `error | warn | info | debug` (default `info`)
 
 ### Optional config file `.obsidian-mcp.json` in vault root
 
@@ -368,12 +416,13 @@ User edits a note in Obsidian while Claude writes via `patch_note`:
 - Claude's write lands on the latest version (last-write-wins)
 - No locking — acceptable for single-user vaults
 
-### Broken Links
+### Broken / Dead Links
 
 `[[note-that-doesnt-exist]]`:
 - Stored as edges to a "phantom node" (path in graph but no file)
 - `graph_traverse` skips phantom nodes by default
-- `graph_analyze({ analysis: "orphans" })` reports phantom targets
+- `graph_analyze({ analysis: "dead_links" })` reports phantom targets and their referencing notes
+- `orphans` analysis only reports real files with zero connections (distinct from dead links)
 
 ### Large Vaults (10k+ notes)
 
