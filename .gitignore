@@ -1,4 +1,8 @@
 node_modules/
 dist/
+coverage/
 *.tsbuildinfo
 .DS_Store
+.idea/
+.mcpregistry_*
+server.json
